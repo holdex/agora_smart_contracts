@@ -184,7 +184,7 @@ contract Crowdsale is StaffUtil {
 	}
 
 	function setTokenContract(Token token) external onlyOwner {
-		require(token.balanceOf(this) >= 0);
+		require(token.decimals() == tokenDecimals);
 		require(tokenContract == address(0));
 		require(token != address(0));
 		tokenContract = token;
