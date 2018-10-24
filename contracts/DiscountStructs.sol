@@ -1,8 +1,9 @@
 pragma solidity ^0.4.24;
 
 
-import "../node_modules/zeppelin-solidity/contracts/math/SafeMath.sol";
+import "zeppelin-solidity/contracts/math/SafeMath.sol";
 import "./Staff.sol";
+import "./StaffUtil.sol";
 import "./Crowdsale.sol";
 
 
@@ -76,7 +77,7 @@ contract DiscountStructs is StaffUtil {
 				for (uint j = 0; j < discountSteps[i].length; j++) {
 					if (_purchasedValue >= discountSteps[i][j].fromWei
 						&& (_purchasedValue < discountSteps[i][j].toWei || discountSteps[i][j].toWei == 0)) {
-						uint256 bonus = _purchasedAmount * discountSteps[i][j].percent / 100;
+						uint256 bonus = _purchasedAmount.mul(discountSteps[i][j].percent).div(100);
 						if (discountStructs[i].distributedTokens.add(bonus) > discountStructs[i].availableTokens) {
 							return;
 						}
@@ -102,7 +103,7 @@ contract DiscountStructs is StaffUtil {
 				for (uint j = 0; j < discountSteps[i].length; j++) {
 					if (_purchasedValue >= discountSteps[i][j].fromWei
 						&& (_purchasedValue < discountSteps[i][j].toWei || discountSteps[i][j].toWei == 0)) {
-						uint256 bonus = _purchasedAmount * discountSteps[i][j].percent / 100;
+						uint256 bonus = _purchasedAmount.mul(discountSteps[i][j].percent).div(100);
 						if (discountStructs[i].distributedTokens.add(bonus) > discountStructs[i].availableTokens) {
 							return;
 						}
@@ -122,7 +123,7 @@ contract DiscountStructs is StaffUtil {
 		require(_fromWei.length > 0 && _fromWei.length == _toWei.length && _fromWei.length == _percent.length);
 
 		for (uint j = 0; j < discountStructs.length; j++) {
-			require(_dates[0] > discountStructs[j].fromDate || _dates[1] < discountStructs[j].toDate);
+			require(_dates[0] > discountStructs[j].toDate || _dates[1] < discountStructs[j].fromDate);
 		}
 
 		DiscountStruct memory ds = DiscountStruct(_tokens, 0, _dates[0], _dates[1]);
@@ -130,7 +131,10 @@ contract DiscountStructs is StaffUtil {
 
 		for (uint i = 0; i < _fromWei.length; i++) {
 			require(_fromWei[i] > 0 || _toWei[i] > 0);
-			require(_percent[i] > 0);
+			if (_fromWei[i] > 0 && _toWei[i] > 0) {
+				require(_fromWei[i] < _toWei[i]);
+			}
+			require(_percent[i] > 0 && _percent[i] <= 100);
 			discountSteps[index].push(DiscountStep(_fromWei[i], _toWei[i], _percent[i]));
 		}
 

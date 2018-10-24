@@ -1,18 +1,30 @@
 const Staff = artifacts.require("./Staff.sol");
 const Crowdsale = artifacts.require("./Crowdsale.sol");
+// const Commission = artifacts.require("./Commission.sol");
 const PromoCodes = artifacts.require("./PromoCodes.sol");
 const DiscountPhases = artifacts.require("./DiscountPhases.sol");
 const DiscountStructs = artifacts.require("./DiscountStructs.sol");
 
 module.exports = function (deployer) {
-    deployer.deploy(Staff)
-        .then(() => new Promise(r => setTimeout(r, 60000)))
+    deployer
+        .deploy(Staff)
         .then(() => deployer.deploy(DiscountPhases, Staff.address))
-        .then(() => new Promise(r => setTimeout(r, 60000)))
         .then(() => deployer.deploy(DiscountStructs, Staff.address))
-        .then(() => new Promise(r => setTimeout(r, 60000)))
         .then(() => deployer.deploy(PromoCodes, Staff.address))
-        .then(() => new Promise(r => setTimeout(r, 60000)))
+        // .then(() => deployer.deploy(Commission,
+        //     Staff.address,
+        //     process.env.ETH_FUNDS_WALLET,
+        //     [
+        //         // 'address #1',
+        //         // 'address #2'
+        //     ],
+        //     [
+        //         // numerator #1,
+        //         // numerator #2
+        //     ],
+        //     0,//denominator
+        //     0// fees cap in wei
+        // ))
         .then(() => deployer.deploy(Crowdsale,
             [
                 parseInt(process.env.START_DATE),
@@ -28,39 +40,45 @@ module.exports = function (deployer) {
                 parseInt(process.env.REFERRAL_BONUS_PERCENT)
             ],
             [
-                process.env.ETH_FUNDS_WALLET,
+                process.env.ETH_FUNDS_WALLET, //Commission.address,
                 PromoCodes.address,
                 DiscountPhases.address,
                 DiscountStructs.address,
                 Staff.address
             ]))
-        .then(() => new Promise(r => setTimeout(r, 60000)))
+        // .then(() => Commission.deployed())
+        // .then(c => {
+        //     console.log("Commission.setCrowdsale");
+        //     return c.setCrowdsale(Crowdsale.address)
+        // })
         .then(() => PromoCodes.deployed())
         .then(p => {
             console.log("PromoCodes.setCrowdsale");
             return p.setCrowdsale(Crowdsale.address)
         })
-        .then(() => new Promise(r => setTimeout(r, 60000)))
         .then(() => DiscountStructs.deployed())
         .then(d => {
             console.log("DiscountStructs.setCrowdsale");
             return d.setCrowdsale(Crowdsale.address)
         })
-        .then(() => new Promise(r => setTimeout(r, 60000)))
+        .then(() => DiscountPhases.deployed())
+        .then(d => {
+            console.log("DiscountPhases.setCrowdsale");
+            return d.setCrowdsale(Crowdsale.address)
+        })
         .then(() => Staff.deployed())
         .then(s => {
             const staff = process.env.STAFF_ADDR;
-            if (staff.length > 0) {
+            if (staff && staff.length > 0) {
                 console.log("Add staff", staff);
                 return s.addStaff(staff);
             }
             console.log("Skip staff");
         })
-        .then(() => new Promise(r => setTimeout(r, 60000)))
         .then(() => Staff.deployed())
         .then(s => {
             const owner = process.env.OWNER_ADDR;
-            if (owner.length > 0) {
+            if (owner && owner.length > 0) {
                 console.log("Transfer ownership", owner);
                 return s.transferOwnership(owner);
             }

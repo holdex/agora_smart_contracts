@@ -2,6 +2,7 @@ pragma solidity ^0.4.24;
 
 
 import "./Staff.sol";
+import "./StaffUtil.sol";
 import "./Token.sol";
 import "./DiscountPhases.sol";
 import "./DiscountStructs.sol";
@@ -50,7 +51,6 @@ contract Crowdsale is StaffUtil {
 		uint256 referralTokens;
 		uint256 receivedTokens;
 		TokensPurchase[] tokensPurchases;
-		bool isBlockpass;
 	}
 
 	struct TokensPurchase {
@@ -88,10 +88,8 @@ contract Crowdsale is StaffUtil {
 	event Resumed(uint timestamp, address byStaff);
 	event Finalized(uint timestamp, address byStaff);
 	event TokensSent(address indexed investor, uint256 amount, uint timestamp, address byStaff);
-	event PurchasedTokensClaimLocked(uint date, uint timestamp, address byStaff);
-	event PurchasedTokensClaimUnlocked(uint timestamp, address byStaff);
-	event BonusTokensClaimLocked(uint date, uint timestamp, address byStaff);
-	event BonusTokensClaimUnlocked(uint timestamp, address byStaff);
+	event PurchasedTokensClaimLockSet(uint date, uint timestamp, address byStaff);
+	event BonusTokensClaimLockSet(uint date, uint timestamp, address byStaff);
 	event CrowdsaleStartDateUpdated(uint date, uint timestamp, address byStaff);
 	event EndDateUpdated(uint date, uint timestamp, address byStaff);
 	event MinPurchaseChanged(uint256 minPurchaseInWei, uint timestamp, address byStaff);
@@ -134,7 +132,7 @@ contract Crowdsale is StaffUtil {
 
 		require(startDate < crowdsaleStartDate);
 		require(crowdsaleStartDate < endDate);
-		require(tokenRate > 0);
+		require(tokenDecimals > 0);
 		require(tokenRate > 0);
 		require(tokensForSaleCap > 0);
 		require(minPurchaseInWei <= maxInvestorContributionInWei);
@@ -186,6 +184,7 @@ contract Crowdsale is StaffUtil {
 	}
 
 	function setTokenContract(Token token) external onlyOwner {
+		require(token.balanceOf(this) >= 0);
 		require(tokenContract == address(0));
 		require(token != address(0));
 		tokenContract = token;
@@ -198,21 +197,7 @@ contract Crowdsale is StaffUtil {
 		return 0;
 	}
 
-	function isBlockpassInvestor(address _investor) external constant returns (bool) {
-		return investors[_investor].status == InvestorStatus.WHITELISTED && investors[_investor].isBlockpass;
-	}
-
-	function whitelistInvestor(address _investor, bool _isBlockpass) external onlyOwnerOrStaff {
-		require(_investor != address(0));
-		require(investors[_investor].status != InvestorStatus.WHITELISTED);
-
-		investors[_investor].status = InvestorStatus.WHITELISTED;
-		investors[_investor].isBlockpass = _isBlockpass;
-
-		emit InvestorWhitelisted(_investor, now, msg.sender);
-	}
-
-	function bulkWhitelistInvestor(address[] _investors) external onlyOwnerOrStaff {
+	function whitelistInvestors(address[] _investors) external onlyOwnerOrStaff {
 		for (uint256 i = 0; i < _investors.length; i++) {
 			if (_investors[i] != address(0) && investors[_investors[i]].status != InvestorStatus.WHITELISTED) {
 				investors[_investors[i]].status = InvestorStatus.WHITELISTED;
@@ -221,35 +206,23 @@ contract Crowdsale is StaffUtil {
 		}
 	}
 
-	function blockInvestor(address _investor) external onlyOwnerOrStaff {
-		require(_investor != address(0));
-		require(investors[_investor].status != InvestorStatus.BLOCKED);
-
-		investors[_investor].status = InvestorStatus.BLOCKED;
-
-		emit InvestorBlocked(_investor, now, msg.sender);
+	function blockInvestors(address[] _investors) external onlyOwnerOrStaff {
+		for (uint256 i = 0; i < _investors.length; i++) {
+			if (_investors[i] != address(0) && investors[_investors[i]].status != InvestorStatus.BLOCKED) {
+				investors[_investors[i]].status = InvestorStatus.BLOCKED;
+				emit InvestorBlocked(_investors[i], now, msg.sender);
+			}
+		}
 	}
 
-	function lockPurchasedTokensClaim(uint256 _date) external onlyOwner {
-		require(_date > now);
+	function setPurchasedTokensClaimLockDate(uint _date) external onlyOwner {
 		purchasedTokensClaimDate = _date;
-		emit PurchasedTokensClaimLocked(_date, now, msg.sender);
+		emit PurchasedTokensClaimLockSet(_date, now, msg.sender);
 	}
 
-	function unlockPurchasedTokensClaim() external onlyOwner {
-		purchasedTokensClaimDate = now;
-		emit PurchasedTokensClaimUnlocked(now, msg.sender);
-	}
-
-	function lockBonusTokensClaim(uint256 _date) external onlyOwner {
-		require(_date > now);
+	function setBonusTokensClaimLockDate(uint _date) external onlyOwner {
 		bonusTokensClaimDate = _date;
-		emit BonusTokensClaimLocked(_date, now, msg.sender);
-	}
-
-	function unlockBonusTokensClaim() external onlyOwner {
-		bonusTokensClaimDate = now;
-		emit BonusTokensClaimUnlocked(now, msg.sender);
+		emit BonusTokensClaimLockSet(_date, now, msg.sender);
 	}
 
 	function setCrowdsaleStartDate(uint256 _date) external onlyOwner {
@@ -279,7 +252,7 @@ contract Crowdsale is StaffUtil {
 		emit TokenRateChanged(_tokenRate, now, msg.sender);
 	}
 
-	function buyTokens(bytes32 _promoCode, address _referrer) external payable {
+	function buyTokens(bytes32 _promoCode, address _referrer, uint _discountId) external payable {
 		require(!finalized);
 		require(!paused);
 		require(startDate < now);
@@ -287,6 +260,14 @@ contract Crowdsale is StaffUtil {
 		require(msg.value > 0);
 		require(msg.value >= minPurchaseInWei);
 		require(investors[msg.sender].contributionInWei.add(msg.value) <= maxInvestorContributionInWei);
+
+		uint purchaseId = investors[msg.sender].tokensPurchases.push(TokensPurchase({
+			value : 0,
+			amount : 0,
+			bonus : 0,
+			referrer : 0x0,
+			referrerSentAmount : 0
+			})) - 1;
 
 		// calculate purchased amount
 		uint256 purchasedAmount;
@@ -300,7 +281,7 @@ contract Crowdsale is StaffUtil {
 
 		// calculate total amount, this includes promo code amount or discount phase amount
 		uint256 promoCodeBonusAmount = promoCodesContract.applyBonusAmount(msg.sender, purchasedAmount, _promoCode);
-		uint256 discountPhaseBonusAmount = discountPhasesContract.calculateBonusAmount(purchasedAmount);
+		uint256 discountPhaseBonusAmount = discountPhasesContract.getBonus(msg.sender, purchaseId, purchasedAmount, _discountId);
 		uint256 discountStructBonusAmount = discountStructsContract.getBonus(msg.sender, purchasedAmount, msg.value);
 		uint256 bonusAmount = promoCodeBonusAmount.add(discountPhaseBonusAmount).add(discountStructBonusAmount);
 
@@ -337,19 +318,16 @@ contract Crowdsale is StaffUtil {
 		investors[msg.sender].contributionInWei = investors[msg.sender].contributionInWei.add(msg.value);
 
 		// update investor's tokens purchases
-		uint tokensPurchasesLength = investors[msg.sender].tokensPurchases.push(TokensPurchase({
-			value : msg.value,
-			amount : purchasedAmount,
-			bonus : bonusAmount,
-			referrer : referrerAddr,
-			referrerSentAmount : referrerBonusAmount
-			})
-		);
+		investors[msg.sender].tokensPurchases[purchaseId].value = msg.value;
+		investors[msg.sender].tokensPurchases[purchaseId].amount = purchasedAmount;
+		investors[msg.sender].tokensPurchases[purchaseId].bonus = bonusAmount;
+		investors[msg.sender].tokensPurchases[purchaseId].referrer = referrerAddr;
+		investors[msg.sender].tokensPurchases[purchaseId].referrerSentAmount = referrerBonusAmount;
 
 		// log investor's tokens purchase
 		emit TokensPurchased(
 			msg.sender,
-			tokensPurchasesLength - 1,
+			purchaseId,
 			msg.value,
 			purchasedAmount,
 			promoCodeBonusAmount,
@@ -361,7 +339,7 @@ contract Crowdsale is StaffUtil {
 		);
 
 		// forward eth to funds wallet
-		ethFundsWallet.transfer(msg.value);
+		require(ethFundsWallet.call.gas(300000).value(msg.value)());
 	}
 
 	function sendTokens(address _investor, uint256 _amount) external onlyOwner {
@@ -421,7 +399,9 @@ contract Crowdsale is StaffUtil {
 				claimedSentTokens = claimedSentTokens.add(receivedTokens);
 
 				// free up storage used by transaction
-				delete (investors[msg.sender].tokensPurchases);
+				for (uint i = 0; i < investors[msg.sender].tokensPurchases.length; i++) {
+					delete (investors[msg.sender].tokensPurchases[i]);
+				}
 
 				clPurchasedTokens = purchasedTokens;
 				clReceivedTokens = receivedTokens;
@@ -433,8 +413,18 @@ contract Crowdsale is StaffUtil {
 		{
 			uint256 bonusTokens_ = investors[msg.sender].bonusTokens;
 			uint256 refTokens = investors[msg.sender].referralTokens;
+
+			for (i = 0; i < investors[msg.sender].tokensPurchases.length; i++) {
+				uint256 blockedBonus = discountPhasesContract.getBlockedBonus(msg.sender, i);
+				if (blockedBonus > 0) {
+					bonusTokens_ = bonusTokens_.sub(blockedBonus);
+				} else {
+					discountPhasesContract.cancelBonus(msg.sender, i);
+				}
+			}
+
 			if (bonusTokensClaimDate < now && (bonusTokens_ > 0 || refTokens > 0)) {
-				investors[msg.sender].bonusTokens = 0;
+				investors[msg.sender].bonusTokens = investors[msg.sender].bonusTokens.sub(bonusTokens_);
 				investors[msg.sender].referralTokens = 0;
 
 				claimedBonusTokens = claimedBonusTokens.add(bonusTokens_).add(refTokens);
@@ -504,6 +494,9 @@ contract Crowdsale is StaffUtil {
 
 		// free up storage used by transaction
 		delete (investors[_investor].tokensPurchases[_purchaseId]);
+
+		// cancel bonus discount phase
+		discountPhasesContract.cancelBonus(_investor, _purchaseId);
 
 		// log investor's tokens purchase refund
 		emit TokensPurchaseRefunded(_investor, _purchaseId, purchaseValue, purchaseAmount, bonusAmount, now, msg.sender);

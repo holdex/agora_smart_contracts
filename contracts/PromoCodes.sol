@@ -2,10 +2,14 @@ pragma solidity ^0.4.24;
 
 
 import "./Staff.sol";
+import "./StaffUtil.sol";
 import "./Crowdsale.sol";
+import "zeppelin-solidity/contracts/math/SafeMath.sol";
 
 
 contract PromoCodes is StaffUtil {
+	using SafeMath for uint256;
+
 	address public crowdsale;
 
 	event PromoCodeAdded(bytes32 indexed code, string name, uint8 percent, uint256 maxUses, uint timestamp, address byStaff);
@@ -44,7 +48,7 @@ contract PromoCodes is StaffUtil {
 		promoCodes[_promoCode].investors[_investor] = true;
 		promoCodes[_promoCode].uses = promoCodes[_promoCode].uses + 1;
 		emit PromoCodeUsed(_promoCode, _investor, now);
-		return _purchasedAmount * promoCodes[_promoCode].percent / 100;
+		return _purchasedAmount.mul(promoCodes[_promoCode].percent).div(100);
 	}
 
 	function calculateBonusAmount(address _investor, uint256 _purchasedAmount, bytes32 _promoCode) public constant returns (uint256) {
@@ -53,13 +57,13 @@ contract PromoCodes is StaffUtil {
 		|| promoCodes[_promoCode].uses == promoCodes[_promoCode].maxUses) {
 			return 0;
 		}
-		return _purchasedAmount * promoCodes[_promoCode].percent / 100;
+		return _purchasedAmount.mul(promoCodes[_promoCode].percent).div(100);
 	}
 
 	function addPromoCode(string _name, bytes32 _code, uint256 _maxUses, uint8 _percent) public onlyOwnerOrStaff {
 		require(bytes(_name).length > 0);
 		require(_code[0] != 0);
-		require(_percent > 0);
+		require(_percent > 0 && _percent <= 100);
 		require(_maxUses > 0);
 		require(promoCodes[_code].percent == 0);
 
