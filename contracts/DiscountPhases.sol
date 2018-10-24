@@ -22,8 +22,9 @@ contract DiscountPhases is StaffUtil {
 	}
 
 	event DiscountPhaseAdded(uint index, string name, uint8 percent, uint fromDate, uint toDate, uint lockDate, uint timestamp, address byStaff);
-	event DiscountPhaseBonusApplied(uint index, uint purchaseId, uint256 bonusAmount, uint timestamp);
+	event DiscountPhaseBonusApplied(uint index, uint purchaseId, uint256 bonusAmount, uint256 purchasedTokensAmount, uint256 purchasedWeiAmount, uint timestamp);
 	event DiscountPhaseBonusCanceled(uint index, uint purchaseId, uint256 bonusAmount, uint timestamp);
+	event DiscountPhasePurchaseCanceled(uint index, uint purchaseId, uint256 purchasedTokenAmount, uint256 purchasedWeiAmount, uint timestamp);
 	event DiscountPhaseDiscontinued(uint index, uint timestamp, address byStaff);
 
 	struct DiscountPhase {
@@ -36,9 +37,18 @@ contract DiscountPhases is StaffUtil {
 
 	DiscountPhase[] public discountPhases;
 
-	mapping(address => mapping(uint => InvestorPurchaseBonus)) public investorPurchaseBonus;
+	mapping(address => mapping(uint => InvestorPurchase)) public investorPurchase;
 
-	struct InvestorPurchaseBonus {
+	struct InvestorPurchase {
+		bool exists;
+		uint discountId;
+		uint256 purchasedTokensAmount;
+		uint256 purchasedWeiAmount;
+	}
+
+	mapping(address => mapping(uint => InvestorBonus)) public investorBonus;
+
+	struct InvestorBonus {
 		bool exists;
 		uint discountId;
 		uint256 bonusAmount;
@@ -47,30 +57,52 @@ contract DiscountPhases is StaffUtil {
 	constructor(Staff _staffContract) StaffUtil(_staffContract) public {
 	}
 
-	function getBonus(address _investor, uint _purchaseId, uint256 _purchaseAmount, uint _discountId) public onlyCrowdsale returns (uint256) {
-		uint256 bonusAmount = calculateBonusAmount(_purchaseAmount, _discountId);
+	function getBonus(address _investor, uint _purchaseId, uint256 _purchasedTokensAmount, uint256 _purchasedWeiAmount, uint _discountId) public onlyCrowdsale returns (uint256) {
+		uint256 bonusAmount = calculateBonusAmount(_purchasedTokensAmount, _discountId);
 		if (bonusAmount > 0) {
-			investorPurchaseBonus[_investor][_purchaseId].exists = true;
-			investorPurchaseBonus[_investor][_purchaseId].discountId = _discountId;
-			investorPurchaseBonus[_investor][_purchaseId].bonusAmount = bonusAmount;
-			emit DiscountPhaseBonusApplied(_discountId, _purchaseId, bonusAmount, now);
+			investorBonus[_investor][_purchaseId].exists = true;
+			investorBonus[_investor][_purchaseId].discountId = _discountId;
+			investorBonus[_investor][_purchaseId].bonusAmount = bonusAmount;
+
+			investorPurchase[_investor][_purchaseId].exists = true;
+			investorPurchase[_investor][_purchaseId].discountId = _discountId;
+			investorPurchase[_investor][_purchaseId].purchasedTokensAmount = _purchasedTokensAmount;
+			investorPurchase[_investor][_purchaseId].purchasedWeiAmount = _purchasedWeiAmount;
+
+			emit DiscountPhaseBonusApplied(_discountId, _purchaseId, bonusAmount, _purchasedTokensAmount, _purchasedWeiAmount, now);
 		}
 		return bonusAmount;
 	}
 
 	function getBlockedBonus(address _investor, uint _purchaseId) public constant returns (uint256) {
-		InvestorPurchaseBonus storage purchaseBonus = investorPurchaseBonus[_investor][_purchaseId];
-		if (purchaseBonus.exists && discountPhases[purchaseBonus.discountId].lockDate > now) {
-			return investorPurchaseBonus[_investor][_purchaseId].bonusAmount;
+		InvestorBonus storage discountBonus = investorBonus[_investor][_purchaseId];
+		if (discountBonus.exists && discountPhases[discountBonus.discountId].lockDate > now) {
+			return investorBonus[_investor][_purchaseId].bonusAmount;
+		}
+	}
+
+	function getBlockedPurchased(address _investor, uint _purchaseId) public constant returns (uint256[2] purchasedAmount) {
+		InvestorPurchase storage discountPurchase = investorPurchase[_investor][_purchaseId];
+		if (discountPurchase.exists && discountPhases[discountPurchase.discountId].lockDate > now) {
+			purchasedAmount[0] = investorPurchase[_investor][_purchaseId].purchasedTokensAmount;
+			purchasedAmount[1] = investorPurchase[_investor][_purchaseId].purchasedWeiAmount;
 		}
 	}
 
 	function cancelBonus(address _investor, uint _purchaseId) public onlyCrowdsale {
-		InvestorPurchaseBonus storage purchaseBonus = investorPurchaseBonus[_investor][_purchaseId];
+		InvestorBonus storage purchaseBonus = investorBonus[_investor][_purchaseId];
 		if (purchaseBonus.bonusAmount > 0) {
 			emit DiscountPhaseBonusCanceled(purchaseBonus.discountId, _purchaseId, purchaseBonus.bonusAmount, now);
 		}
-		delete (investorPurchaseBonus[_investor][_purchaseId]);
+		delete (investorBonus[_investor][_purchaseId]);
+	}
+
+	function cancelPurchase(address _investor, uint _purchaseId) public onlyCrowdsale {
+		InvestorPurchase storage discountPurchase = investorPurchase[_investor][_purchaseId];
+		if (discountPurchase.purchasedTokensAmount > 0) {
+			emit DiscountPhasePurchaseCanceled(discountPurchase.discountId, _purchaseId, discountPurchase.purchasedTokensAmount, discountPurchase.purchasedWeiAmount, now);
+		}
+		delete (investorPurchase[_investor][_purchaseId]);
 	}
 
 	function calculateBonusAmount(uint256 _purchasedAmount, uint _discountId) public constant returns (uint256) {

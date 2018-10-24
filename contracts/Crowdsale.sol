@@ -281,7 +281,7 @@ contract Crowdsale is StaffUtil {
 
 		// calculate total amount, this includes promo code amount or discount phase amount
 		uint256 promoCodeBonusAmount = promoCodesContract.applyBonusAmount(msg.sender, purchasedAmount, _promoCode);
-		uint256 discountPhaseBonusAmount = discountPhasesContract.getBonus(msg.sender, purchaseId, purchasedAmount, _discountId);
+		uint256 discountPhaseBonusAmount = discountPhasesContract.getBonus(msg.sender, purchaseId, purchasedAmount, msg.value, _discountId);
 		uint256 discountStructBonusAmount = discountStructsContract.getBonus(msg.sender, purchasedAmount, msg.value);
 		uint256 bonusAmount = promoCodeBonusAmount.add(discountPhaseBonusAmount).add(discountStructBonusAmount);
 
@@ -388,11 +388,23 @@ contract Crowdsale is StaffUtil {
 		require(purchasedTokensClaimDate < now || bonusTokensClaimDate < now);
 
 		{
+			uint256 contributionInWei = investors[msg.sender].contributionInWei;
 			uint256 purchasedTokens = investors[msg.sender].purchasedTokens;
 			uint256 receivedTokens = investors[msg.sender].receivedTokens;
+
+			for (i = 0; i < investors[msg.sender].tokensPurchases.length; i++) {
+				uint256[2] memory blockedPurchased = discountPhasesContract.getBlockedPurchased(msg.sender, i);
+				if (blockedPurchased[0] > 0) {
+					purchasedTokens = purchasedTokens.sub(blockedPurchased[0]);
+					contributionInWei = contributionInWei.sub(blockedPurchased[1]);
+				} else {
+					discountPhasesContract.cancelPurchase(msg.sender, i);
+				}
+			}
+
 			if (purchasedTokensClaimDate < now && (purchasedTokens > 0 || receivedTokens > 0)) {
-				investors[msg.sender].contributionInWei = 0;
-				investors[msg.sender].purchasedTokens = 0;
+				investors[msg.sender].contributionInWei = investors[msg.sender].contributionInWei.sub(contributionInWei);
+				investors[msg.sender].purchasedTokens = investors[msg.sender].purchasedTokens.sub(purchasedTokens);
 				investors[msg.sender].receivedTokens = 0;
 
 				claimedSoldTokens = claimedSoldTokens.add(purchasedTokens);
@@ -495,8 +507,11 @@ contract Crowdsale is StaffUtil {
 		// free up storage used by transaction
 		delete (investors[_investor].tokensPurchases[_purchaseId]);
 
-		// cancel bonus discount phase
+		// cancel bonus discount phase bonus
 		discountPhasesContract.cancelBonus(_investor, _purchaseId);
+
+		// cancel bonus discount phase purchase
+		discountPhasesContract.cancelPurchase(_investor, _purchaseId);
 
 		// log investor's tokens purchase refund
 		emit TokensPurchaseRefunded(_investor, _purchaseId, purchaseValue, purchaseAmount, bonusAmount, now, msg.sender);
