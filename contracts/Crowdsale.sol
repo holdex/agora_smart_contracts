@@ -84,17 +84,7 @@ contract Crowdsale is StaffUtil {
 		uint timestamp,
 		address byStaff
 	);
-	event Paused(uint timestamp, address byStaff);
-	event Resumed(uint timestamp, address byStaff);
-	event Finalized(uint timestamp, address byStaff);
 	event TokensSent(address indexed investor, uint256 amount, uint timestamp, address byStaff);
-	event PurchasedTokensClaimLockSet(uint date, uint timestamp, address byStaff);
-	event BonusTokensClaimLockSet(uint date, uint timestamp, address byStaff);
-	event CrowdsaleStartDateUpdated(uint date, uint timestamp, address byStaff);
-	event EndDateUpdated(uint date, uint timestamp, address byStaff);
-	event MinPurchaseChanged(uint256 minPurchaseInWei, uint timestamp, address byStaff);
-	event MaxInvestorContributionChanged(uint256 maxInvestorContributionInWei, uint timestamp, address byStaff);
-	event TokenRateChanged(uint newRate, uint timestamp, address byStaff);
 	event TokensClaimed(
 		address indexed investor,
 		uint256 purchased,
@@ -104,7 +94,6 @@ contract Crowdsale is StaffUtil {
 		uint timestamp,
 		address byStaff
 	);
-	event TokensBurned(uint256 amount, uint timestamp, address byStaff);
 
 	constructor (
 		uint256[11] uint256Args,
@@ -217,39 +206,32 @@ contract Crowdsale is StaffUtil {
 
 	function setPurchasedTokensClaimLockDate(uint _date) external onlyOwner {
 		purchasedTokensClaimDate = _date;
-		emit PurchasedTokensClaimLockSet(_date, now, msg.sender);
 	}
 
 	function setBonusTokensClaimLockDate(uint _date) external onlyOwner {
 		bonusTokensClaimDate = _date;
-		emit BonusTokensClaimLockSet(_date, now, msg.sender);
 	}
 
 	function setCrowdsaleStartDate(uint256 _date) external onlyOwner {
 		crowdsaleStartDate = _date;
-		emit CrowdsaleStartDateUpdated(_date, now, msg.sender);
 	}
 
 	function setEndDate(uint256 _date) external onlyOwner {
 		endDate = _date;
-		emit EndDateUpdated(_date, now, msg.sender);
 	}
 
 	function setMinPurchaseInWei(uint256 _minPurchaseInWei) external onlyOwner {
 		minPurchaseInWei = _minPurchaseInWei;
-		emit MinPurchaseChanged(_minPurchaseInWei, now, msg.sender);
 	}
 
 	function setMaxInvestorContributionInWei(uint256 _maxInvestorContributionInWei) external onlyOwner {
 		require(minPurchaseInWei <= _maxInvestorContributionInWei);
 		maxInvestorContributionInWei = _maxInvestorContributionInWei;
-		emit MaxInvestorContributionChanged(_maxInvestorContributionInWei, now, msg.sender);
 	}
 
 	function changeTokenRate(uint256 _tokenRate) external onlyOwner {
 		require(_tokenRate > 0);
 		tokenRate = _tokenRate;
-		emit TokenRateChanged(_tokenRate, now, msg.sender);
 	}
 
 	function buyTokens(bytes32 _promoCode, address _referrer, uint _discountId) external payable {
@@ -370,9 +352,6 @@ contract Crowdsale is StaffUtil {
 		require(tokensToBurn > 0);
 
 		tokenContract.burn(tokensToBurn);
-
-		// log tokens burned action
-		emit TokensBurned(tokensToBurn, now, msg.sender);
 	}
 
 	function claimTokens() external {
@@ -538,27 +517,11 @@ contract Crowdsale is StaffUtil {
 		referrerSentAmount = investors[_investor].tokensPurchases[_purchaseId].referrerSentAmount;
 	}
 
-	function pause() external onlyOwner {
-		require(!paused);
-
-		paused = true;
-
-		emit Paused(now, msg.sender);
-	}
-
-	function resume() external onlyOwner {
-		require(paused);
-
-		paused = false;
-
-		emit Resumed(now, msg.sender);
+	function setPaused(bool p) external onlyOwner {
+		paused = p;
 	}
 
 	function finalize() external onlyOwner {
-		require(!finalized);
-
 		finalized = true;
-
-		emit Finalized(now, msg.sender);
 	}
 }
